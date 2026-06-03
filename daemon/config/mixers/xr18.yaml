@@ -1,0 +1,27 @@
+# Behringer XR18 — 18-channel USB mixer
+id: xr18
+name: X Air 18
+channels:
+  - channel-01
+  - channel-02
+  - channel-03
+  - channel-04
+  - channel-05
+  - channel-06
+  - channel-07
+  - channel-08
+  - channel-09
+  - channel-10
+  - channel-11
+  - channel-12
+  - channel-13
+  - channel-14
+  - channel-15
+  - channel-16
+  - channel-17
+  - channel-18
+sample_rate: 48000
+# pcm_s32le: ALSA input format reported by the XR18 driver
+input_format: pcm_s32le
+# pcm_s24le: saves ~25% disk vs 32-bit padded; WAV container supports it natively
+output_codec: pcm_s24le

@@ -1,0 +1,14 @@
+[Unit]
+Description=Live Recording Daemon
+After=sound.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m daemon.main
+WorkingDirectory=/opt/live-rec-pi/daemon/src
+Restart=on-failure
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target
