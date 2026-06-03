@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..daemon_client import DaemonClient
 from ..dependencies import daemon_error_to_http
-from ..mixer_clients.registry import resolve, supported_ids
+from ..mixer_clients.registry import get_class, resolve, supported_ids
 
 router = APIRouter(prefix="/mixers", tags=["mixers"])
 
@@ -26,6 +28,18 @@ async def load_mixer(mixer_id: str, request: Request) -> dict:
     daemon: DaemonClient = request.app.state.daemon
     with daemon_error_to_http():
         return await daemon.send_async("load_mixer", id=mixer_id)
+
+
+@router.post("/{mixer_id}/discover")
+async def discover_mixer(mixer_id: str) -> dict:
+    if mixer_id not in supported_ids():
+        raise HTTPException(status_code=404, detail=f"Unknown mixer id: {mixer_id!r}")
+    with daemon_error_to_http():
+        cls = get_class(mixer_id)
+        host = await asyncio.to_thread(cls.discover)
+    if host is None:
+        raise HTTPException(status_code=404, detail="Mixer not found on the network")
+    return {"host": host}
 
 
 @router.get("/{mixer_id}/channels")

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from .config import load_config
 from .daemon_client import DaemonClient
-from .routers import mixers, playback, recordings, settings, status
+from .routers import mixers, playback, recordings, settings, status, ws
 
 _CONFIG_DIR_DEFAULT = Path(__file__).parent.parent.parent.parent / "config"
 
@@ -33,6 +33,7 @@ def create_app(config_dir: Path) -> FastAPI:
     app.include_router(recordings.router)
     app.include_router(playback.router)
     app.include_router(settings.router)
+    app.include_router(ws.router)
 
     return app
 
