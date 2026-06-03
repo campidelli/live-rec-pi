@@ -11,7 +11,6 @@ import { ConnectionStatus } from './components/ConnectionStatus'
 import { ChannelGrid } from './components/ChannelGrid'
 import { RecordingBar } from './components/RecordingBar'
 import { PlaybackBar } from './components/PlaybackBar'
-import { RoutingMatrix } from './components/RoutingMatrix'
 
 const STORAGE_KEY = 'mixer_host'
 
@@ -125,18 +124,15 @@ export default function App() {
             onToggleAll={toggleAll}
             onRename={rename}
           />
-        ) : (
-          <div className="flex items-center justify-center flex-1 text-zinc-500 text-sm">
+        ) : (          <div className="flex items-center justify-center flex-1 text-zinc-500 text-sm">
             {wsConnected ? 'No channels — load a mixer to begin.' : 'Connecting…'}
           </div>
         )}
-
-        {channels.length > 0 && <RoutingMatrix channels={channels} />}
       </main>
 
       {/* Bottom bar */}
       <footer className="bg-zinc-800 border-t border-zinc-700 px-4 py-3 flex flex-col gap-3">
-        <RecordingBar status={status} />
+        <RecordingBar status={status} selected={selected} />
         <PlaybackBar status={status} selected={selected} sessions={sessions} />
       </footer>
     </div>

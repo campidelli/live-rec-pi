@@ -1,6 +1,8 @@
 import type { Channel, Status } from '../api/types'
 import { ChannelRow } from './ChannelRow'
 
+const ROWS_PER_COLUMN = 9
+
 interface Props {
   channels: Channel[]
   status: Status | null
@@ -16,38 +18,54 @@ export function ChannelGrid({ channels, status, selected, onToggle, onToggleAll,
 
   const recordingFiles = new Set(
     (status?.recording_files ?? []).map((f) => {
-      // extract channel index from filename like "01-kick.wav" → 0
       const match = f.match(/\/(\d+)-/)
       return match ? parseInt(match[1], 10) - 1 : -1
     }),
   )
 
+  // split into columns of ROWS_PER_COLUMN
+  const columns: Channel[][] = []
+  for (let i = 0; i < channels.length; i += ROWS_PER_COLUMN) {
+    columns.push(channels.slice(i, i + ROWS_PER_COLUMN))
+  }
+
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2">
       {/* select-all header */}
-      <div className="flex items-center gap-3 px-3 py-1">
+      <div
+        className="flex items-center gap-3 px-3 py-1 cursor-pointer select-none"
+        onClick={() => onToggleAll(allIndices)}
+      >
         <input
           type="checkbox"
           checked={allSelected}
-          onChange={() => onToggleAll(allIndices)}
-          className="w-5 h-5 accent-blue-500 cursor-pointer flex-shrink-0"
+          onChange={() => {}}
+          className="w-4 h-4 accent-blue-500 pointer-events-none"
+          readOnly
         />
         <span className="text-xs text-zinc-500 uppercase tracking-wide">
           {selected.size} of {channels.length} selected
         </span>
       </div>
 
-      {channels.map((ch) => (
-        <ChannelRow
-          key={ch.index}
-          channel={ch}
-          selected={selected.has(ch.index)}
-          recording={status?.status === 'recording' && recordingFiles.has(ch.index)}
-          playing={status?.playing === true && selected.has(ch.index)}
-          onToggle={onToggle}
-          onRename={onRename}
-        />
-      ))}
+      {/* columns */}
+      <div className="flex gap-2">
+        {columns.map((col, colIdx) => (
+          <div key={colIdx} className="flex-1 flex flex-col gap-1 min-w-0">
+            {col.map((ch) => (
+              <ChannelRow
+                key={ch.index}
+                channel={ch}
+                selected={selected.has(ch.index)}
+                recording={status?.status === 'recording' && recordingFiles.has(ch.index)}
+                playing={status?.playing === true && selected.has(ch.index)}
+                onToggle={onToggle}
+                onRename={onRename}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

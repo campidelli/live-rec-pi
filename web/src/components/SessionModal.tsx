@@ -39,7 +39,7 @@ export function SessionModal({ onConfirm, onCancel }: Props) {
             onClick={() => onConfirm(name.trim())}
             className="px-4 py-2 rounded text-sm bg-blue-600 text-white hover:bg-blue-500 transition-colors"
           >
-            Start
+            OK
           </button>
         </div>
       </div>
