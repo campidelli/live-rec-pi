@@ -1,0 +1,4 @@
+socket_path: /tmp/live-rec.sock
+host: 0.0.0.0
+port: 8000
+log_level: INFO

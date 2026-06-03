@@ -1,0 +1,15 @@
+[Unit]
+Description=Live Recording API
+After=live-rec-daemon.service
+Requires=live-rec-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m api.main
+WorkingDirectory=/opt/live-rec-pi/api/src
+Restart=on-failure
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target

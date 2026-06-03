@@ -127,6 +127,34 @@ class IpcServer(threading.Thread):
                 self._mixer.set_channel_id(int(index), channel_id)
                 return {"status": "ok", "channels": self._mixer.get_channel_ids()}
 
+            if command == "play":
+                session = msg.get("session")
+                filename = msg.get("filename")
+                if not session or not filename:
+                    return {"status": "error", "message": "missing fields: session, filename"}
+                offset = float(msg.get("offset", 0.0))
+                self._playback.play(session, filename, offset)
+                return {"status": "ok"}
+
+            if command == "playback_stop":
+                self._playback.stop()
+                return {"status": "ok"}
+
+            if command == "pause":
+                self._playback.pause()
+                return {"status": "ok"}
+
+            if command == "resume":
+                self._playback.resume()
+                return {"status": "ok"}
+
+            if command == "seek":
+                seconds = msg.get("seconds")
+                if seconds is None:
+                    return {"status": "error", "message": "missing field: seconds"}
+                self._playback.seek(float(seconds))
+                return {"status": "ok"}
+
             return {"status": "error", "message": f"unknown command: {command!r}"}
 
         except (RuntimeError, ValueError) as e:
