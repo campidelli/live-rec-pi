@@ -1,0 +1,8 @@
+socket_path: /run/live-rec/daemon.sock
+recordings_dir: /recordings
+log_level: INFO
+
+recording:
+  output_path: /recordings
+  session_template: "%Y-%m-%d_%H-%M-%S"
+  format: wav

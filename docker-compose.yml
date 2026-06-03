@@ -1,0 +1,28 @@
+services:
+  daemon:
+    build:
+      context: .
+      dockerfile: daemon/Dockerfile.mock
+    volumes:
+      - socket:/run/live-rec
+      - recordings:/recordings
+    environment:
+      SOCKET_PATH: /run/live-rec/daemon.sock
+      RECORDINGS_DIR: /recordings
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - socket:/run/live-rec
+    depends_on:
+      - daemon
+    restart: unless-stopped
+
+volumes:
+  socket:
+  recordings:
