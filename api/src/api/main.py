@@ -8,6 +8,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .config import load_config
 from .daemon_client import DaemonClient
@@ -28,12 +29,19 @@ def create_app(config_dir: Path) -> FastAPI:
     app.state.daemon = DaemonClient(cfg.socket_path)
     app.state.config = cfg
 
-    app.include_router(status.router)
-    app.include_router(mixers.router)
-    app.include_router(recordings.router)
-    app.include_router(playback.router)
-    app.include_router(settings.router)
+    app.include_router(status.router, prefix="/api")
+    app.include_router(mixers.router, prefix="/api")
+    app.include_router(recordings.router, prefix="/api")
+    app.include_router(playback.router, prefix="/api")
+    app.include_router(settings.router, prefix="/api")
     app.include_router(ws.router)
+
+    # Serve the built web UI. Must be mounted last — it acts as a catch-all.
+    # In production, web/dist/ is built and copied to the install directory.
+    # In development, Vite's dev server handles the UI directly.
+    web_dist = config_dir.parent / "web" / "dist"
+    if web_dist.is_dir():
+        app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
 
     return app
 
