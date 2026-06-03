@@ -1,8 +1,14 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { api } from '../api/client'
 
-export function useChannels(mixerId: string | null) {
+export function useChannels(mixerId: string | null, channelCount: number) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  // pre-select all channels whenever the channel list first arrives or changes size
+  useEffect(() => {
+    if (channelCount === 0) return
+    setSelected(new Set(Array.from({ length: channelCount }, (_, i) => i)))
+  }, [channelCount])
 
   const toggle = useCallback((index: number) => {
     setSelected((prev) => {

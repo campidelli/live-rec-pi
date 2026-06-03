@@ -10,6 +10,11 @@ function buildWsUrl(mixerId: string, host: string): string {
   return `${proto}://${location.host}/ws/meters?mixer_id=${encodeURIComponent(mixerId)}&host=${encodeURIComponent(host)}`
 }
 
+function buildDemoWsUrl(): string {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${proto}://${location.host}/ws/meters/demo`
+}
+
 interface MeterState {
   levels: Map<number, number>
   connected: boolean
@@ -26,21 +31,19 @@ export function useMeterWebSocket(
   const lastFrameTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!mixerId || !host) {
-      setLevels(new Map())
-      setConnected(false)
-      return
-    }
+    // connect to demo stream when no host is configured
+    const url = mixerId && host
+      ? buildWsUrl(mixerId, host)
+      : buildDemoWsUrl()
 
     function markConnected() {
       setConnected(true)
       if (lastFrameTimer.current) clearTimeout(lastFrameTimer.current)
-      // consider disconnected if no frame arrives within 2s
       lastFrameTimer.current = setTimeout(() => setConnected(false), 2000)
     }
 
     function connect() {
-      const ws = new WebSocket(buildWsUrl(mixerId!, host!))
+      const ws = new WebSocket(url)
       wsRef.current = ws
 
       ws.onmessage = (evt) => {

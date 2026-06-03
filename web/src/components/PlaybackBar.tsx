@@ -5,9 +5,10 @@ interface Props {
   status: Status | null
   selected: Set<number>
   sessions: Session[]
+  isRecording: boolean
 }
 
-export function PlaybackBar({ status, selected, sessions }: Props) {
+export function PlaybackBar({ status, selected, sessions, isRecording }: Props) {
   const isPlaying = status?.playing ?? false
   const isPaused = status?.paused ?? false
   const progress = status && status.duration > 0
@@ -28,15 +29,25 @@ export function PlaybackBar({ status, selected, sessions }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-3 flex-wrap">
-        <button
-          onClick={playSelected}
-          disabled={isPlaying || selected.size === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm bg-blue-700 text-white hover:bg-blue-600 disabled:opacity-40 transition-colors"
-        >
-          ▶ Play selected
-        </button>
+    <div className="flex flex-col gap-2 flex-1">
+      {isPlaying && (
+        <div className="h-1 w-full rounded bg-zinc-700 overflow-hidden">
+          <div
+            className="h-full rounded bg-blue-500 transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        {!isPlaying && (
+          <button
+            onClick={playSelected}
+            disabled={isRecording || selected.size === 0 || sessions.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm bg-blue-700 text-white hover:bg-blue-600 disabled:opacity-40 transition-colors"
+          >
+            ▶ Play
+          </button>
+        )}
 
         {isPlaying && !isPaused && (
           <button
@@ -50,7 +61,7 @@ export function PlaybackBar({ status, selected, sessions }: Props) {
         {isPaused && (
           <button
             onClick={() => api.resume()}
-            className="px-3 py-1.5 rounded text-sm bg-zinc-700 text-white hover:bg-zinc-600 transition-colors"
+            className="px-3 py-1.5 rounded text-sm bg-blue-700 text-white hover:bg-blue-600 transition-colors"
           >
             ▶ Resume
           </button>
@@ -64,15 +75,6 @@ export function PlaybackBar({ status, selected, sessions }: Props) {
           ■ Stop
         </button>
       </div>
-
-      {isPlaying && (
-        <div className="h-1.5 w-full rounded bg-zinc-700 overflow-hidden">
-          <div
-            className="h-full rounded bg-blue-500 transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
     </div>
   )
 }
