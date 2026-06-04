@@ -1,8 +1,0 @@
-socket_path: /tmp/live-rec.sock
-recordings_dir: /home/pi/recordings
-log_level: INFO
-
-recording:
-  output_path: /home/pi/recordings
-  session_template: "%Y-%m-%d_%H-%M-%S"
-  format: wav
