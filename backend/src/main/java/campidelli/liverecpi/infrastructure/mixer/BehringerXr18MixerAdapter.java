@@ -48,9 +48,8 @@ public class BehringerXr18MixerAdapter implements MixerPort {
 
     @Override
     public ProbeSpecification getProbeSpecification() {
-        // We can use JavaOSC to serialize our discovery string nicely too
         byte[] payload = serializeOscMessage(new OSCMessage("/xinfo"));
-        return new ProbeSpecification(10023, payload);
+        return new ProbeSpecification(10024, payload);
     }
 
     @Override

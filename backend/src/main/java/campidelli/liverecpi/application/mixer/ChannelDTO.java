@@ -1,8 +1,8 @@
 package campidelli.liverecpi.application.mixer;
 
-import io.micronaut.core.annotation.Introspected;
+import io.micronaut.serde.annotation.Serdeable;
 
-@Introspected
+@Serdeable
 record ChannelDTO(
     int index,
     String name,

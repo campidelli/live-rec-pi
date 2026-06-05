@@ -2,9 +2,9 @@ package campidelli.liverecpi.application.mixer;
 
 import java.util.List;
 
-import io.micronaut.core.annotation.Introspected;
+import io.micronaut.serde.annotation.Serdeable;
 
-@Introspected
+@Serdeable
 public record ConnectedMixerDTO(
     String id,
     String modelKey,

@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Singleton
@@ -22,11 +24,13 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
     List<OnlineDevice> discoveredDevices = new ArrayList<>();
     List<InetAddress> broadcastAddresses = getBroadcastAddresses();
 
+    log.debug("Starting OSC discovery scan across targets: {}", broadcastAddresses);
+
     try (DatagramSocket socket = new DatagramSocket()) {
       socket.setBroadcast(true);
       socket.setSoTimeout(TIMEOUT_MS);
 
-      // 1. Send all unique probes across all network interfaces
+      // 1. Send all unique probes across all active network adapters
       for (ProbeSpecification spec : specs) {
         for (InetAddress broadcastAddr : broadcastAddresses) {
           try {
@@ -37,74 +41,145 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
                 spec.port());
             socket.send(packet);
           } catch (IOException e) {
-            log.warn("Failed to send probe to interface: {}", broadcastAddr, e);
+            log.warn("Failed to send probe out to interface path: {}", broadcastAddr, e);
           }
         }
       }
 
-      // 2. Listen for any replies
-      byte[] receiveBuffer = new byte[1024];
+      // 2. Listen loop for incoming network signatures
+      byte[] receiveBuffer = new byte[1500];
       while (true) {
         try {
           DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
           socket.receive(receivePacket);
 
-          String responseText = new String(receivePacket.getData(), 0, receivePacket.getLength()).trim();
           String ip = receivePacket.getAddress().getHostAddress();
           int port = receivePacket.getPort();
 
-          discoveredDevices.add(new OnlineDevice(responseText, ip, port));
+          try {
+            // Use strict OSC pointer decoding to parse the null-delimited token fields cleanly
+            OscMessage oscMessage = decodeOscMessage(receivePacket.getData(), receivePacket.getLength());
+            
+            // Build a clean descriptive summary out of the parsed string arguments
+            String responseSummary = String.join(" | ", oscMessage.args().stream().map(Object::toString).toList());
+            
+            log.info("Discovered active OSC device at {}:{} -> {}", ip, port, responseSummary);
+            discoveredDevices.add(new OnlineDevice(responseSummary, ip, port));
+
+          } catch (Exception parseException) {
+            log.debug("Skipped non-OSC or unparseable packet variant from {}: {}", ip, parseException.getMessage());
+          }
 
         } catch (SocketTimeoutException e) {
-          break; // No more devices replied within the timeout window
+          break; // Window timeout reached; gracefully drop out of scan cycle
         }
       }
 
     } catch (IOException e) {
-      log.error("Network exception during generic device discovery", e);
+      log.error("Fatal network stack exception during device discovery tracking", e);
     }
 
     return discoveredDevices;
   }
 
+  /**
+   * Loops through every physical adapter interface on the machine, filtering out internal loopbacks, 
+   * and isolates active IPv4 network subnets.
+   */
   private List<InetAddress> getBroadcastAddresses() {
-    List<InetAddress> broadcastList = new ArrayList<>();
+    Set<InetAddress> broadcastSet = new LinkedHashSet<>();
     try {
-      // 1. Get every physical network interface (Wi-Fi, Ethernet, Virtual switches)
       Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
 
       while (interfaces.hasMoreElements()) {
         NetworkInterface networkInterface = interfaces.nextElement();
-        // 2. Filter out interfaces that are offline, loopback (127.0.0.1), or virtual
-        // docker interfaces
-        if (networkInterface.isLoopback() || !networkInterface.isUp() || networkInterface.isVirtual()) {
+        
+        // Skip loopbacks or turned-off links. Virtual flags are intentionally allowed here 
+        // to retain compatibility with specific macOS USB dongle mapping drivers.
+        if (networkInterface.isLoopback() || !networkInterface.isUp()) {
           continue;
         }
-        // 3. Extract the concrete IP configuration assignments from the interface
+        
         for (InterfaceAddress interfaceAddress : networkInterface.getInterfaceAddresses()) {
           InetAddress broadcast = interfaceAddress.getBroadcast();
-          // 4. If the subnet has a valid broadcast layout, save it
-          if (broadcast != null) {
-            broadcastList.add(broadcast);
+          if (broadcast != null && interfaceAddress.getAddress() instanceof Inet4Address) {
+            broadcastSet.add(broadcast);
           }
         }
       }
     } catch (SocketException e) {
-      log.error("Failed to retrieve network interfaces for device discovery", e);
+      log.error("Failed to map system adapters for network interface routing setup", e);
     }
-    // 5. Global Fallback: If no interfaces were active, try the universal local broadcast
-    String universalAddress = "255.255.255.255";
-    if (broadcastList.isEmpty()) {
-      try {
-        log.warn("No specific interface broadcast addresses found. Falling back to {}", universalAddress);
-        broadcastList.add(InetAddress.getByName(universalAddress));
-      } catch (UnknownHostException e) {
-        log.error("Failed to resolve universal broadcast address {}. Network stack may be misconfigured.",
-            universalAddress,
-            e);
+
+    // Always ensure global subnet visibility fallback is active for direct point-to-point wires
+    try {
+      broadcastSet.add(InetAddress.getByName("255.255.255.255"));
+    } catch (UnknownHostException ignored) {}
+
+    return new ArrayList<>(broadcastSet);
+  }
+
+  /* =========================================================================
+     Strict Internal OSC Parsing Mechanism
+     ========================================================================= */
+
+  private static record OscMessage(String address, List<Object> args) {}
+
+  private static OscMessage decodeOscMessage(byte[] packet, int length) throws Exception {
+    int offset = 0;
+
+    // 1. Parse address string block
+    StringAndOffset addrResult = decodeOscString(packet, offset, length);
+    String address = addrResult.value();
+    offset = addrResult.nextOffset();
+
+    // 2. Parse type tag block configuration (Must begin with a comma sign)
+    StringAndOffset tagsResult = decodeOscString(packet, offset, length);
+    String typeTags = tagsResult.value();
+    offset = tagsResult.nextOffset();
+
+    if (!typeTags.startsWith(",")) {
+      throw new IllegalArgumentException("Packet payload format does not present a valid OSC signature block.");
+    }
+
+    List<Object> args = new ArrayList<>();
+    for (int i = 1; i < typeTags.length(); i++) {
+      char tag = typeTags.charAt(i);
+      if (tag == 's') {
+        StringAndOffset strResult = decodeOscString(packet, offset, length);
+        args.add(strResult.value());
+        offset = strResult.nextOffset();
+      } else if (tag == 'i') {
+        args.add(ByteBuffer.wrap(packet, offset, 4).getInt());
+        offset += 4;
+      } else if (tag == 'f') {
+        args.add(ByteBuffer.wrap(packet, offset, 4).getFloat());
+        offset += 4;
       }
     }
 
-    return broadcastList;
+    return new OscMessage(address, args);
   }
+
+  private static StringAndOffset decodeOscString(byte[] packet, int offset, int maxLength) {
+    int end = -1;
+    for (int i = offset; i < maxLength; i++) {
+      if (packet[i] == 0) {
+        end = i;
+        break;
+      }
+    }
+    if (end < 0) {
+      throw new IllegalStateException("OSC string mapping constraint missing final null terminator block.");
+    }
+
+    String value = new String(packet, offset, end - offset, StandardCharsets.UTF_8);
+    int nextOffset = end + 1;
+    while (nextOffset % 4 != 0) {
+      nextOffset++;
+    }
+    return new StringAndOffset(value, nextOffset);
+  }
+
+  private static record StringAndOffset(String value, int nextOffset) {}
 }
