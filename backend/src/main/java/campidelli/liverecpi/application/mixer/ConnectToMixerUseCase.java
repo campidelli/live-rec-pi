@@ -9,44 +9,37 @@ import campidelli.liverecpi.domain.mixer.Mixer;
 @Singleton
 public class ConnectToMixerUseCase {
 
-  private final List<MixerPort> supportedMixers;
-  private final SupportedMixerCache mixerCache;
+  private final List<MixerPort> mixerPorts;
+  private final OnlineMixerCache mixerCache;
 
-  public ConnectToMixerUseCase(List<MixerPort> supportedMixers, SupportedMixerCache mixerCache) {
-    this.supportedMixers = supportedMixers;
+  public ConnectToMixerUseCase(List<MixerPort> mixerPorts, OnlineMixerCache mixerCache) {
+    this.mixerPorts = mixerPorts;
     this.mixerCache = mixerCache;
   }
 
   public ConnectedMixerDTO execute(String mixerId) {
-    SupportedMixerDTO chosenMixer = mixerCache.getById(mixerId)
+    Mixer chosenMixer = mixerCache.getById(mixerId)
         .orElseThrow(() -> new IllegalArgumentException("Mixer ID not found or cache expired. Run discovery again."));
 
-    if (!chosenMixer.isOnline()) {
-      throw new IllegalStateException("Cannot connect to an offline mixer instance.");
-    }
-
-    MixerPort selectedMixerPort = supportedMixers.stream()
-        .filter(port -> port.getModelKey().equalsIgnoreCase(chosenMixer.modelKey()))
+    MixerPort mixerPort = mixerPorts.stream()
+        .filter(port -> port.getDefaultModelKey().equals(chosenMixer.modelKey()))
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("Unsupported driver model type: " + chosenMixer.modelKey()));
 
-    String ipAddress = chosenMixer.ipAddress().orElseThrow();
-    int port = chosenMixer.port().orElseThrow();
-
-    Mixer connectedMixer = selectedMixerPort.connect(ipAddress, port);
+    Mixer connectedMixer = mixerPort.connect(chosenMixer);
 
     return toConnectedMixerDTO(mixerId, connectedMixer);
   }
 
   private ConnectedMixerDTO toConnectedMixerDTO(String mixerId, Mixer mixer) {
-    List<ChannelDTO> channelDTOs = mixer.channels().stream()
+    List<ChannelDTO> channelDTOs = mixer.channels().orElse(List.of()).stream()
         .map(this::toChannelDTO)
         .toList();
 
     return new ConnectedMixerDTO(
         mixerId,
         mixer.modelKey(),
-        mixer.displayName(),
+        mixer.name(),
         mixer.ipAddress(),
         mixer.port(),
         channelDTOs);

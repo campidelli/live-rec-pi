@@ -1,11 +1,17 @@
 package campidelli.liverecpi.domain.mixer;
 
 import java.util.List;
+import java.util.Optional;
 
 public record Mixer(
     String modelKey,
-    String displayName,
+    String name,
+    String firmwareVersion,
     String ipAddress,
     int port,
-    List<Channel> channels) {
+    Optional<List<Channel>> channels) {
+
+    public String id() {
+        return String.join("|", modelKey, ipAddress);
+    }
 }

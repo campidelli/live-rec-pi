@@ -1,12 +1,19 @@
 package campidelli.liverecpi.application.mixer;
 
+import java.util.Optional;
+
 import campidelli.liverecpi.domain.mixer.Mixer;
+import campidelli.liverecpi.domain.mixer.OnlineDevice;
 import campidelli.liverecpi.domain.mixer.ProbeSpecification;
 
 public interface MixerPort {
-  String getModelKey();
-  String getDisplayName();
+  String getDefaultModelKey();
+
+  String getDefaultName();
+  
   ProbeSpecification getProbeSpecification();
-  boolean supports(String modelSignature);
-  Mixer connect(String ipAddress, int port);
+
+  Optional<Mixer> supports(OnlineDevice device);
+
+  Mixer connect(Mixer mixer);
 }

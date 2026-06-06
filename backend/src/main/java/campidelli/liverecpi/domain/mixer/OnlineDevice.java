@@ -1,7 +1,13 @@
 package campidelli.liverecpi.domain.mixer;
 
+import java.util.List;
+
 public record OnlineDevice(
-    String modelSignature,
+    List<String> signatureParts,
     String ipAddress,
     Integer port) {
+
+    public String signature() {
+        return String.join("|", signatureParts);
+    }
 }

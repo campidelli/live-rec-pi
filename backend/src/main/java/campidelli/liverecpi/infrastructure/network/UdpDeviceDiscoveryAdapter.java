@@ -59,19 +59,18 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
           try {
             // Use strict OSC pointer decoding to parse the null-delimited token fields cleanly
             OscMessage oscMessage = decodeOscMessage(receivePacket.getData(), receivePacket.getLength());
-            
-            // Build a clean descriptive summary out of the parsed string arguments
-            String responseSummary = String.join(" | ", oscMessage.args().stream().map(Object::toString).toList());
-            
-            log.info("Discovered active OSC device at {}:{} -> {}", ip, port, responseSummary);
-            discoveredDevices.add(new OnlineDevice(responseSummary, ip, port));
+            List<String> responseArgs = oscMessage.args().stream().map(Object::toString).toList();
+            OnlineDevice device = new OnlineDevice(responseArgs, ip, port);
+            log.info("Discovered active OSC device at {}:{} -> {}", ip, port, device.signature());
+            discoveredDevices.add(device);
 
           } catch (Exception parseException) {
             log.debug("Skipped non-OSC or unparseable packet variant from {}: {}", ip, parseException.getMessage());
           }
 
         } catch (SocketTimeoutException e) {
-          break; // Window timeout reached; gracefully drop out of scan cycle
+          log.debug("OSC discovery scan window timeout reached, ending scan cycle.");
+          break;
         }
       }
 
@@ -83,7 +82,8 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
   }
 
   /**
-   * Loops through every physical adapter interface on the machine, filtering out internal loopbacks, 
+   * Loops through every physical adapter interface on the machine, filtering out
+   * internal loopbacks,
    * and isolates active IPv4 network subnets.
    */
   private List<InetAddress> getBroadcastAddresses() {
@@ -93,13 +93,14 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
 
       while (interfaces.hasMoreElements()) {
         NetworkInterface networkInterface = interfaces.nextElement();
-        
-        // Skip loopbacks or turned-off links. Virtual flags are intentionally allowed here 
+
+        // Skip loopbacks or turned-off links. Virtual flags are intentionally allowed
+        // here
         // to retain compatibility with specific macOS USB dongle mapping drivers.
         if (networkInterface.isLoopback() || !networkInterface.isUp()) {
           continue;
         }
-        
+
         for (InterfaceAddress interfaceAddress : networkInterface.getInterfaceAddresses()) {
           InetAddress broadcast = interfaceAddress.getBroadcast();
           if (broadcast != null && interfaceAddress.getAddress() instanceof Inet4Address) {
@@ -111,19 +112,24 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
       log.error("Failed to map system adapters for network interface routing setup", e);
     }
 
-    // Always ensure global subnet visibility fallback is active for direct point-to-point wires
+    // Always ensure global subnet visibility fallback is active for direct
+    // point-to-point wires
     try {
       broadcastSet.add(InetAddress.getByName("255.255.255.255"));
-    } catch (UnknownHostException ignored) {}
+    } catch (UnknownHostException ignored) {
+    }
 
     return new ArrayList<>(broadcastSet);
   }
 
-  /* =========================================================================
-     Strict Internal OSC Parsing Mechanism
-     ========================================================================= */
+  /*
+   * =========================================================================
+   * Strict Internal OSC Parsing Mechanism
+   * =========================================================================
+   */
 
-  private static record OscMessage(String address, List<Object> args) {}
+  private static record OscMessage(String address, List<Object> args) {
+  }
 
   private static OscMessage decodeOscMessage(byte[] packet, int length) throws Exception {
     int offset = 0;
@@ -181,5 +187,6 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
     return new StringAndOffset(value, nextOffset);
   }
 
-  private static record StringAndOffset(String value, int nextOffset) {}
+  private static record StringAndOffset(String value, int nextOffset) {
+  }
 }

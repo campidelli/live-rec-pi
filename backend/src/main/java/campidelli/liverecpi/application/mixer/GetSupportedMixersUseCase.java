@@ -1,5 +1,6 @@
 package campidelli.liverecpi.application.mixer;
 
+import campidelli.liverecpi.domain.mixer.Mixer;
 import campidelli.liverecpi.domain.mixer.OnlineDevice;
 import campidelli.liverecpi.domain.mixer.ProbeSpecification;
 import jakarta.inject.Singleton;
@@ -12,63 +13,61 @@ import java.util.stream.Stream;
 @Singleton
 public class GetSupportedMixersUseCase {
 
-private final DeviceDiscoveryPort discoveryPort;
-    private final List<MixerPort> supportedMixers;
-    private final SupportedMixerCache mixerCache;
+    private final DeviceDiscoveryPort discoveryPort;
+    private final List<MixerPort> mixerPorts;
+    private final OnlineMixerCache onlineMixerCache;
 
     public GetSupportedMixersUseCase(
-            DeviceDiscoveryPort discoveryPort, 
-            List<MixerPort> supportedMixers, 
-            SupportedMixerCache mixerCache) {
+            DeviceDiscoveryPort discoveryPort,
+            List<MixerPort> mixerPorts,
+            OnlineMixerCache onlineMixerCache) {
         this.discoveryPort = discoveryPort;
-        this.supportedMixers = supportedMixers;
-        this.mixerCache = mixerCache;
+        this.mixerPorts = mixerPorts;
+        this.onlineMixerCache = onlineMixerCache;
     }
 
-  public List<SupportedMixerDTO> execute() {
-    List<ProbeSpecification> specs = supportedMixers.stream()
-            .map(MixerPort::getProbeSpecification)
-            .toList();
-    List<OnlineDevice> onlineDevices = discoveryPort.discoverOnlineDevices(specs);
+    public List<SupportedMixerDTO> execute() {
+        List<ProbeSpecification> mixerSpecs = mixerPorts.stream()
+                .map(MixerPort::getProbeSpecification)
+                .toList();
+        List<OnlineDevice> onlineDevices = discoveryPort.discoverOnlineDevices(mixerSpecs);
 
-    List<SupportedMixerDTO> onlineMixers = onlineDevices.stream()
-        .flatMap(device -> supportedMixers.stream()
-            .filter(mixer -> mixer.supports(device.modelSignature()))
-            .map(mixer -> toOnlineDTO(mixer, device)))
-        .toList();
+        List<Mixer> onlineMixers = onlineDevices.stream()
+                .flatMap(device -> mixerPorts.stream()
+                        .map(mixerPort -> mixerPort.supports(device))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get))
+                .toList();
+        onlineMixerCache.update(onlineMixers);
 
-    List<SupportedMixerDTO> offlineMixers = supportedMixers.stream()
-        .filter(mixer -> onlineDevices.stream()
-            .noneMatch(device -> mixer.supports(device.modelSignature())))
-        .map(this::toOfflineDTO)
-        .toList();
+        List<SupportedMixerDTO> onlineMixersDTO = onlineMixers.stream()
+                .map(mixer -> toOnlineDTO(mixer))
+                .toList();
 
-    List<SupportedMixerDTO> sortedFinalList = Stream.concat(onlineMixers.stream(), offlineMixers.stream())
-        .sorted(Comparator.comparing(SupportedMixerDTO::displayName))
-        .toList();
-  
-    mixerCache.update(sortedFinalList);
+        List<SupportedMixerDTO> offlineMixersDTO = mixerPorts.stream()
+                .filter(mixer -> onlineDevices.stream()
+                        .noneMatch(device -> mixer.supports(device).isPresent()))
+                .map(this::toOfflineDTO)
+                .toList();
 
-    return sortedFinalList;
-  }
+        return Stream.concat(onlineMixersDTO.stream(), offlineMixersDTO.stream())
+                .sorted(Comparator.comparing(SupportedMixerDTO::name))
+                .toList();
+    }
 
-  private SupportedMixerDTO toOnlineDTO(MixerPort mixer, OnlineDevice device) {
-    String uniqueId = String.join("|", mixer.getModelKey(), device.ipAddress());
-    return new SupportedMixerDTO(
-        uniqueId,
-        mixer.getModelKey(),
-        mixer.getDisplayName(),
-        Optional.of(device.ipAddress()),
-        Optional.of(device.port()));
-  }
+    private SupportedMixerDTO toOnlineDTO(Mixer mixer) {
+        return new SupportedMixerDTO(
+                mixer.id(),
+                mixer.name(),
+                Optional.of(mixer.ipAddress()),
+                Optional.of(mixer.port()));
+    }
 
-  private SupportedMixerDTO toOfflineDTO(MixerPort mixer) {
-    String uniqueId = String.join("|", mixer.getModelKey(), "offline");
-    return new SupportedMixerDTO(
-        uniqueId,
-        mixer.getModelKey(),
-        mixer.getDisplayName(),
-        Optional.empty(),
-        Optional.empty());
-  }
+    private SupportedMixerDTO toOfflineDTO(MixerPort mixerPort) {
+        return new SupportedMixerDTO(
+                mixerPort.getDefaultModelKey(),
+                mixerPort.getDefaultName(),
+                Optional.empty(),
+                Optional.empty());
+    }
 }
