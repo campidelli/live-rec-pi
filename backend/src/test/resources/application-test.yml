@@ -1,0 +1,9 @@
+recordings:
+  root-dir: target/test-recordings
+
+mixers:
+  available:
+    xr18:
+      name: Test XR18
+      host: 127.0.0.1
+      osc-port: 10024
