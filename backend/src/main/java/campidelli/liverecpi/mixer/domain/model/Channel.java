@@ -1,10 +1,12 @@
 package campidelli.liverecpi.mixer.domain.model;
 
+import java.util.Optional;
+
 public class Channel {
 
     private final int index;
-    private String name;
-    private Color color;
+    private Optional<String> name = Optional.empty();
+    private Optional<Color> color = Optional.empty();
 
     public Channel(int index) {
         this.index = index;
@@ -14,20 +16,20 @@ public class Channel {
         return index;
     }
 
-    public String name() {
+    public Optional<String> name() {
         return name;
     }
 
-    public Color color() {
+    public Optional<Color> color() {
         return color;
     }
 
     public void rename(String name) {
-        this.name = name;
+        this.name = Optional.ofNullable(name);
     }
 
     public void recolor(Color color) {
-        this.color = color;
+        this.color = Optional.ofNullable(color);
     }
 
     public record Color(
