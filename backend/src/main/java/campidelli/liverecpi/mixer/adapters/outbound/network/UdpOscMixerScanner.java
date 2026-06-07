@@ -1,27 +1,39 @@
-package campidelli.liverecpi.infrastructure.network;
+package campidelli.liverecpi.mixer.adapters.outbound.network;
 
-import campidelli.liverecpi.application.mixer.DeviceDiscoveryPort;
-import campidelli.liverecpi.domain.mixer.OnlineDevice;
-import campidelli.liverecpi.domain.mixer.ProbeSpecification;
-import jakarta.inject.Singleton;
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.net.*;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
+import campidelli.liverecpi.mixer.domain.model.DiscoveredMixer.AvailableMixer;
+import campidelli.liverecpi.mixer.domain.model.MixerConnection;
+import campidelli.liverecpi.mixer.domain.model.MixerDescriptor;
+import jakarta.inject.Singleton;
 
 @Singleton
-public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
+public class UdpOscMixerScanner {
 
-  private static final Logger log = LoggerFactory.getLogger(UdpDeviceDiscoveryAdapter.class);
+  private static final Logger log = LoggerFactory.getLogger(UdpOscMixerScanner.class);
   private static final int TIMEOUT_MS = 1000;
 
-  @Override
-  public List<OnlineDevice> discoverOnlineDevices(Collection<ProbeSpecification> specs) {
-    List<OnlineDevice> discoveredDevices = new ArrayList<>();
+  public List<AvailableMixer> discover(MixerDescriptor descriptor, byte[] payload, int port) {
+    List<AvailableMixer> discoveredMixers = new ArrayList<>();
     List<InetAddress> broadcastAddresses = getBroadcastAddresses();
 
     log.debug("Starting OSC discovery scan across targets: {}", broadcastAddresses);
@@ -31,18 +43,16 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
       socket.setSoTimeout(TIMEOUT_MS);
 
       // 1. Send all unique probes across all active network adapters
-      for (ProbeSpecification spec : specs) {
-        for (InetAddress broadcastAddr : broadcastAddresses) {
-          try {
-            DatagramPacket packet = new DatagramPacket(
-                spec.payload(),
-                spec.payload().length,
-                broadcastAddr,
-                spec.port());
-            socket.send(packet);
-          } catch (IOException e) {
-            log.warn("Failed to send probe out to interface path: {}", broadcastAddr, e);
-          }
+      for (InetAddress broadcastAddr : broadcastAddresses) {
+        try {
+          DatagramPacket packet = new DatagramPacket(
+              payload,
+              payload.length,
+              broadcastAddr,
+              port);
+          socket.send(packet);
+        } catch (IOException e) {
+          log.warn("Failed to send probe out to interface path: {}", broadcastAddr, e);
         }
       }
 
@@ -54,15 +64,14 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
           socket.receive(receivePacket);
 
           String ip = receivePacket.getAddress().getHostAddress();
-          int port = receivePacket.getPort();
 
           try {
             // Use strict OSC pointer decoding to parse the null-delimited token fields cleanly
             OscMessage oscMessage = decodeOscMessage(receivePacket.getData(), receivePacket.getLength());
             List<String> responseArgs = oscMessage.args().stream().map(Object::toString).toList();
-            OnlineDevice device = new OnlineDevice(responseArgs, ip, port);
-            log.info("Discovered active OSC device at {}:{} -> {}", ip, port, device.signature());
-            discoveredDevices.add(device);
+            AvailableMixer mixer = new AvailableMixer(descriptor, responseArgs, new MixerConnection(ip, port));
+            log.info("Discovered active OSC device at {}:{} -> {}", ip, port, mixer.signature());
+            discoveredMixers.add(mixer);
 
           } catch (Exception parseException) {
             log.debug("Skipped non-OSC or unparseable packet variant from {}: {}", ip, parseException.getMessage());
@@ -73,12 +82,11 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
           break;
         }
       }
-
     } catch (IOException e) {
       log.error("Fatal network stack exception during device discovery tracking", e);
     }
 
-    return discoveredDevices;
+    return discoveredMixers;
   }
 
   /**
@@ -127,7 +135,6 @@ public class UdpDeviceDiscoveryAdapter implements DeviceDiscoveryPort {
    * Strict Internal OSC Parsing Mechanism
    * =========================================================================
    */
-
   private static record OscMessage(String address, List<Object> args) {
   }
 
