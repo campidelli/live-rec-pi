@@ -45,6 +45,7 @@ public class JavaSoundAudioSourcesAdapter implements GetAvailableInputChannelsPo
                 .orElse(0);
 
         return new AudioSource(
+            info.getName(),
                 info.getName(),
                 info.getName(),
                 info.getDescription(),
