@@ -8,6 +8,8 @@
         </encoder>
     </appender>
 
+    <logger name="campidelli.liverecpi.mixer.adapters.outbound.xr18.Xr18FetchMixerMeterLevelsAdapter" level="DEBUG" />
+
     <root level="info">
         <appender-ref ref="STDOUT" />
     </root>

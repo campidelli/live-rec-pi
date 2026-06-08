@@ -4,6 +4,6 @@ import java.util.List;
 
 import campidelli.liverecpi.mixer.domain.model.DiscoveredMixer;
 
-public interface MixerDiscoveryPort {
+public interface DiscoverMixerPort {
     List<DiscoveredMixer> discover();
 }
