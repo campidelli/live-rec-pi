@@ -33,7 +33,7 @@ public class MixerController {
     @Post("/channels")
     public List<ChannelResponse> listChannels(@Body ListChannelsRequest request) {
         return listChannelsUseCase.execute(request.toCommand()).stream()
-                .map(ChannelResponse::fromModel)
+                .map(ChannelResponse::fromDomain)
                 .toList();
     }
 }

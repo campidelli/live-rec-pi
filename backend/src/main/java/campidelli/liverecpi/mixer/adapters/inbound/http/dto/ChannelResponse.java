@@ -10,7 +10,7 @@ public record ChannelResponse(
     String colorHexCode,
     boolean isColorInverted) {
 
-  public static ChannelResponse fromModel(Channel channel) {
+  public static ChannelResponse fromDomain(Channel channel) {
         return new ChannelResponse(
             channel.index(),
             channel.name().orElse(null),
