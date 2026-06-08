@@ -14,17 +14,15 @@ import campidelli.liverecpi.mixer.domain.model.Channel;
 import campidelli.liverecpi.mixer.domain.model.DiscoveredMixer;
 import campidelli.liverecpi.mixer.domain.model.DiscoveredMixer.AvailableMixer;
 import campidelli.liverecpi.mixer.domain.model.DiscoveredMixer.UnavailableMixer;
-import campidelli.liverecpi.mixer.domain.model.MixerConnection;
 import campidelli.liverecpi.mixer.domain.model.MixerDescriptor;
 import campidelli.liverecpi.mixer.ports.outbound.MixerDiscoveryPort;
 import campidelli.liverecpi.mixer.ports.outbound.MixerGatewayPort;
-import campidelli.liverecpi.mixer.ports.outbound.MixerRegistryPort;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Singleton
-public class Xr18MixerDriverAdapter implements MixerRegistryPort, MixerDiscoveryPort, MixerGatewayPort {
+public class Xr18MixerDriverAdapter implements MixerDiscoveryPort, MixerGatewayPort {
 
   private static final Logger log = LoggerFactory.getLogger(Xr18MixerDriverAdapter.class);
   private static final int SOCKET_TIMEOUT_MS = 200;
@@ -49,7 +47,8 @@ public class Xr18MixerDriverAdapter implements MixerRegistryPort, MixerDiscovery
 
   @Override
   public MixerDescriptor getDescriptor() {
-      return new MixerDescriptor("XR18", "Behringer", "X Air XR18", 18);
+    // 16 channels + 1 stereo aux return channel (17-left and 18-right)
+    return new MixerDescriptor("XR18", "Behringer", "X Air XR18", 17);
   }
 
   @Override
@@ -99,12 +98,14 @@ public class Xr18MixerDriverAdapter implements MixerRegistryPort, MixerDiscovery
     String channelIndex = String.format("%02d", index);
     Channel channel = new Channel(index);
 
-    OSCMessage nameResponse = sendOscMessage(socket, address, port, new OSCMessage("/ch/" + channelIndex + "/config/name"));
+    String messagePath = index == 17 ? "/rtn/aux/config/" : "/ch/" + channelIndex + "/config/";
+
+    OSCMessage nameResponse = sendOscMessage(socket, address, port, new OSCMessage(messagePath + "name"));
     if (nameResponse != null && !nameResponse.getArguments().isEmpty()) {
       channel.rename((String) nameResponse.getArguments().get(0));
     }
 
-    OSCMessage colorResponse = sendOscMessage(socket, address, port, new OSCMessage("/ch/" + channelIndex + "/config/color"));
+    OSCMessage colorResponse = sendOscMessage(socket, address, port, new OSCMessage(messagePath + "color"));
     if (colorResponse != null && !colorResponse.getArguments().isEmpty()) {
       int colorValue = (Integer) colorResponse.getArguments().get(0);
       channel.recolor(toChannelColor(colorValue));

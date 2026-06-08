@@ -4,7 +4,6 @@ import java.util.List;
 
 import campidelli.liverecpi.mixer.domain.model.Channel;
 import campidelli.liverecpi.mixer.domain.model.DiscoveredMixer;
-import campidelli.liverecpi.mixer.domain.model.MixerConnection;
 import campidelli.liverecpi.mixer.ports.inbound.GetMixersUseCase;
 import campidelli.liverecpi.mixer.ports.inbound.ListChannelsCommand;
 import campidelli.liverecpi.mixer.ports.inbound.ListChannelsUseCase;
@@ -14,6 +13,7 @@ import jakarta.inject.Singleton;
 
 @Singleton
 public class MixerService implements GetMixersUseCase, ListChannelsUseCase {
+
     private final List<MixerDiscoveryPort> discoveryPorts;
     private final List<MixerGatewayPort> gatewayPorts;
 
