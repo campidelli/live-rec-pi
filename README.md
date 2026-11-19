@@ -45,13 +45,24 @@ These packages provide:
 
 No additional pip installation is required.
 
+`python3-sounddevice`, `libportaudio2` and `python3-psutil` are now optional: the diagnostics use `arecord`, `lsblk`, `lsusb` and `ip` instead (install `usbutils` for `lsusb`).
+
 ## Running
 
-Run hardware diagnostics:
+Run hardware diagnostics (three checks plus a PASS/WARN/FAIL summary):
 
 ```bash
 python3 xr18_diagnostics.py
+python3 xr18_diagnostics.py --ip 192.168.1.50   # also probe a known mixer IP
+python3 xr18_diagnostics.py --no-write-test     # don't write a temp file to the pen drive
+python3 xr18_diagnostics.py --min-free-gb 20    # warn when free space is below 20 GB
 ```
+
+1. **Network**: sends OSC `/xinfo` and reports the mixer name, model, IP and firmware.
+2. **Audio**: finds the XR18 through ALSA and lists its USB capture and playback channels.
+3. **Storage**: finds the USB pen drive and reports filesystem, mount point and free space. It also runs a write test and estimates recording hours. It warns about FAT (4 GB file limit).
+
+The exit code is 1 if any check fails. If audio access is denied, run `sudo usermod -aG audio $USER` and log in again.
 
 Run standalone XR18 network discovery:
 

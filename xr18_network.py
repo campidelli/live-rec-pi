@@ -1,12 +1,17 @@
 
 import ipaddress
 import logging
+import re
 import select
 import socket
 import struct
+import subprocess
 import time
 
-import psutil
+try:
+    import psutil
+except ImportError:  # psutil is optional; fall back to `ip addr`
+    psutil = None
 
 
 # ============================================================
@@ -107,6 +112,41 @@ def osc_decode_message(data: bytes):
 # NETWORK INTERFACE DISCOVERY
 # ============================================================
 
+def _get_ipv4_interfaces_ip_cmd():
+    """Fallback using `ip -o -4 addr show` (iproute2, always on Armbian)."""
+
+    interfaces = []
+
+    try:
+        out = subprocess.run(
+            ["ip", "-o", "-4", "addr", "show", "up"],
+            capture_output=True, text=True, timeout=5, check=False
+        ).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return interfaces
+
+    for line in out.splitlines():
+        match = re.match(r"\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+/\d+)", line)
+        if not match:
+            continue
+
+        name, cidr = match.groups()
+        iface = ipaddress.ip_interface(cidr)
+
+        if iface.ip.is_loopback or iface.network.prefixlen >= 31:
+            continue
+
+        interfaces.append({
+            "name": name.split("@")[0],
+            "ip": str(iface.ip),
+            "netmask": str(iface.netmask),
+            "network": str(iface.network),
+            "broadcast": str(iface.network.broadcast_address)
+        })
+
+    return interfaces
+
+
 def get_ipv4_interfaces():
     """
     Return active IPv4 interfaces and their broadcast addresses.
@@ -114,6 +154,9 @@ def get_ipv4_interfaces():
     Virtual interfaces are intentionally included.
     Loopback interfaces are excluded.
     """
+
+    if psutil is None:
+        return _get_ipv4_interfaces_ip_cmd()
 
     interfaces = []
 
@@ -208,8 +251,8 @@ def validate_xr18_response(data: bytes, sender_ip: str):
 
     reported_ip, mixer_name, model, firmware = arguments[:4]
 
-    # Do not accept arbitrary OSC devices.
-    if "XR18" not in model.upper():
+    # Do not accept arbitrary OSC devices (XR18 / X18 / MR18 family).
+    if not any(m in model.upper() for m in ("XR18", "X18", "MR18")):
         return None
 
     if not mixer_name.strip():
@@ -235,9 +278,13 @@ def validate_xr18_response(data: bytes, sender_ip: str):
 
 def discover_xr18(
     port=XR18_PORT,
-    timeout=XR18_DISCOVERY_TIMEOUT
+    timeout=XR18_DISCOVERY_TIMEOUT,
+    extra_targets=None
 ):
     """
+    extra_targets: optional list of unicast IPs to probe in addition to
+    broadcasts (useful when the router blocks broadcast traffic).
+
     Discover all XR18 mixers on locally connected IPv4 networks.
 
     Each interface gets its own UDP socket bound to its local IP.
@@ -296,6 +343,15 @@ def discover_xr18(
 
                 if XR18_INCLUDE_LIMITED_BROADCAST:
                     targets.add("255.255.255.255")
+
+                for extra in extra_targets or []:
+                    try:
+                        if ipaddress.IPv4Address(extra) in ipaddress.IPv4Network(
+                            interface["network"]
+                        ):
+                            targets.add(extra)
+                    except ValueError:
+                        pass
 
                 for target in targets:
 
