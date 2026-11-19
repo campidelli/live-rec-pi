@@ -1,0 +1,15 @@
+[Unit]
+Description=XR18 multitrack recorder
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_DIR@
+ExecStart=/usr/bin/python3 -u @REPO_DIR@/xr18_recorder.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

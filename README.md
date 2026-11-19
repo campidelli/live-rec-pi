@@ -1,6 +1,10 @@
-# XR18 Hardware Diagnostics & Network Discovery
+# XR18 Recorder, Hardware Diagnostics & Network Discovery
 
-Utilities for detecting the Behringer XR18 USB audio interface, discovering XR18 mixers over the network using OSC, and identifying USB storage devices.
+A multitrack recorder for the Behringer XR18, plus utilities for detecting the XR18 USB audio interface, discovering XR18 mixers over the network using OSC, and identifying USB storage devices.
+
+- `xr18_recorder.py`: records each XR18 USB channel to its own WAV file on a pen drive.
+- `xr18_diagnostics.py`: checks that the mixer, its USB audio and the pen drive are all visible.
+- `xr18_network.py`: OSC network discovery used by both.
 
 Designed for Orange Pi running Armbian (Debian/Ubuntu-based Linux).
 
@@ -73,6 +77,66 @@ Run standalone XR18 network discovery:
 ```bash
 python3 xr18_network.py
 ```
+
+## Recording
+
+```bash
+sudo python3 xr18_recorder.py
+python3 xr18_recorder.py --debug            # also show debug messages on the console
+python3 xr18_recorder.py --duration 60      # stop automatically after 60 seconds
+python3 xr18_recorder.py --ip 192.168.1.139 # also probe a known mixer IP
+```
+
+Run it with `sudo` (or as a service, see below) so it can mount the pen drive if needed.
+
+**Minimum requirements.** The XR18 must be connected via USB and a USB pen drive must be present. If either is missing the script logs an error and exits with code 2 before creating anything. The SD card / eMMC is never used.
+
+**Output.** Each run creates a folder on the pen drive named after the start time, for example `recording_2026-11-19-180227`, containing:
+
+- one mono 24-bit, 48 kHz WAV file per channel
+- `recording.log`, a debug log of the session
+
+**File names.** The script also tries to find the mixer on the network. If it does, it reads each channel's name and colour from the mixer:
+
+- A channel named "voz bruno" is saved as `08-voz-bruno.wav` (lowercase, accents removed, spaces become dashes).
+- Channels whose colour is OFF (0) are not recorded. Use the absence of colour on the mixer to keep unused channels out of the recording.
+- If a channel's colour can't be read, it is recorded anyway and a warning is logged.
+
+If the mixer is not found on the network, every channel is recorded with a generic name: `01-channel.wav`, `02-channel.wav`, and so on.
+
+USB channels 17 and 18 are read from the Main L/R bus (the default USB routing). If you routed the USB sends differently, their names and colours may not match.
+
+**Safety.** WAV headers are refreshed and synced to the drive every 5 seconds, so files stay playable if power is lost (at most the last few seconds are lost). Every log line is synced as it is written. Stop with Ctrl+C or SIGTERM and the files are finalized and synced before the script exits.
+
+## Start recording at boot (systemd)
+
+The `systemd/xr18-recorder.service` unit starts the recorder automatically when the Pi boots. From the repository folder on the Pi, install it with:
+
+```bash
+sed "s|@REPO_DIR@|$PWD|g" systemd/xr18-recorder.service | sudo tee /etc/systemd/system/xr18-recorder.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now xr18-recorder
+```
+
+The `sed` command fills in the path of the repository, so no manual editing is needed. Run it again if you move the repository.
+
+How it behaves:
+
+- **Runs as root**, which the script needs to mount the pen drive.
+- **Waits for the mixer and the drive.** If the mixer's USB or the pen drive is not ready, the script exits with code 2 before writing anything, and systemd retries every 10 seconds. You can power on the mixer or plug in the drive after the Pi has booted.
+- **Network.** The service waits for the network to come up so the mixer's names and colours can be read. If the network is still not available, all channels are recorded with generic names.
+- **A new recording starts on every boot**, and also on every automatic retry after a failure, such as the audio capture dying mid-session. Each one gets its own folder.
+- **Stopping.** `sudo systemctl stop xr18-recorder` stops the recording cleanly. Wait for the command to return before unplugging the drive. A manual stop is not restarted.
+
+Useful commands:
+
+```bash
+systemctl status xr18-recorder      # is it running?
+journalctl -u xr18-recorder -f      # live service output (also shows errors before the folder exists)
+sudo systemctl disable --now xr18-recorder   # stop it and don't start at boot
+```
+
+The main log for a session is `recording.log` on the pen drive. Use `journalctl` for problems that happen before the recording folder exists, such as a missing drive.
 
 ## USB Audio Verification
 
