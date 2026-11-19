@@ -114,8 +114,23 @@ def setup_logging(debug_console):
     return formatter, buffer
 
 
+class SyncFileHandler(logging.FileHandler):
+    """FileHandler that fsyncs after every record, so no log line is lost
+    if the Pi loses power or the pen drive is pulled (exFAT keeps unsynced
+    data in cache). Log volume is low, so the cost is negligible."""
+
+    def emit(self, record):
+        super().emit(record)
+        try:
+            if self.stream:
+                self.stream.flush()
+                os.fsync(self.stream.fileno())
+        except OSError:
+            pass  # never let a logging failure stop the recording
+
+
 def attach_log_file(path, formatter, buffer):
-    handler = logging.FileHandler(path, encoding="utf-8")
+    handler = SyncFileHandler(path, encoding="utf-8")
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(formatter)
 
@@ -757,6 +772,17 @@ def main():
 
     log.info("Done. Files are in %s", folder)
     logging.shutdown()
+
+    # Push everything still cached to the pen drive, plus the folder entry.
+    try:
+        fd = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+    os.sync()
 
     return 0 if ok else 1
 
