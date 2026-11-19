@@ -62,6 +62,10 @@ python3 xr18_diagnostics.py --min-free-gb 20    # warn when free space is below 
 2. **Audio**: finds the XR18 through ALSA and lists its USB capture and playback channels.
 3. **Storage**: finds the USB pen drive and reports filesystem, mount point and free space. It also runs a write test and estimates recording hours. It warns about FAT (4 GB file limit).
 
+Only drives on the USB bus are inspected. The SD card / eMMC (`mmcblk*`) and any disk holding a system mount (`/`, `/boot`, `/var/log`...) are never listed or touched.
+
+If the pen drive is not mounted, add `--mount` (optionally `--mountpoint /mnt/recordings`). The tool mounts it with your uid/gid, so exFAT/FAT/NTFS drives are writable without root. Run it as `sudo python3 xr18_diagnostics.py --mount`, or let it call `sudo -n` (passwordless sudo needed). exFAT also needs `sudo apt install exfatprogs`.
+
 The exit code is 1 if any check fails. If audio access is denied, run `sudo usermod -aG audio $USER` and log in again.
 
 Run standalone XR18 network discovery:

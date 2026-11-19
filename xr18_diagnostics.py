@@ -40,6 +40,7 @@ import xr18_network
 XR18_USB_NAMES = ("XR18", "X18", "X AIR", "XAIR", "BEHRINGER", "MIDAS")
 BEHRINGER_USB_VENDOR_ID = "1397"
 DEFAULT_MIN_FREE_GB = 10.0
+DEFAULT_MOUNTPOINT = "/mnt/recordings"
 
 # Filesystems that cannot hold long multichannel recordings (4 GB limit)
 FAT_FILESYSTEMS = ("vfat", "fat", "fat16", "fat32", "msdos")
@@ -361,16 +362,98 @@ def _mountpoints(node):
     return [m for m in mps if m]
 
 
+SYSTEM_MOUNTS = ("/", "/boot", "/boot/firmware", "/var", "/var/log", "/var/log.hdd",
+                 "/home", "/usr", "/etc")
+
+
+def _all_mountpoints(node):
+    found = _mountpoints(node)
+    for child in node.get("children") or []:
+        found += _all_mountpoints(child)
+    return found
+
+
 def _usb_disks(data):
-    """Yield whole-disk nodes that are USB or removable (not the SD/eMMC)."""
+    """
+    Yield whole-disk nodes on the USB bus ONLY.
+
+    The SD card / eMMC (mmcblk*) is never listed, even though the kernel may
+    flag it as removable/hotplug, and any disk holding a system mount
+    (/, /boot, /var/log...) is skipped as a safety net.
+    """
 
     for dev in data.get("blockdevices", []):
         if dev.get("type") != "disk":
             continue
-        if (dev.get("tran") == "usb"
-                or _truthy(dev.get("rm"))
-                or _truthy(dev.get("hotplug"))):
+        if dev["name"].startswith(("mmcblk", "zram", "loop", "nvme")):
+            continue
+        if any(m in SYSTEM_MOUNTS or m.startswith("/var/log")
+               for m in _all_mountpoints(dev)):
+            continue
+        if dev.get("tran") == "usb":
             yield dev
+
+
+def _owner_ids():
+    """uid/gid of the real user (even when run through sudo)."""
+    uid = int(os.environ.get("SUDO_UID", os.getuid()))
+    gid = int(os.environ.get("SUDO_GID", os.getgid()))
+    return uid, gid
+
+
+def _privileged(cmd):
+    """Run cmd as root: directly, or via non-interactive sudo."""
+    if os.geteuid() != 0:
+        cmd = ["sudo", "-n"] + cmd
+    return run_command(cmd, timeout=30)
+
+
+def mount_volume(path, fstype, mountpoint=DEFAULT_MOUNTPOINT, remount=False):
+    """
+    Mount a USB partition so the current user can write to it.
+    Returns the mount point, or None on failure (reason is logged).
+
+    exFAT/FAT/NTFS carry no Unix permissions, so ownership is set with
+    uid/gid mount options; a plain root mount would be read-only to the user.
+    """
+
+    if remount:
+        res = _privileged(["umount", path])
+        if res is None or res.returncode != 0:
+            log("STORAGE", f"    Could not unmount {path}: "
+                           f"{(res.stderr.strip() if res else 'sudo/umount unavailable')}")
+            return None
+
+    # Preferred: udisks (no root needed, handles exfat options itself)
+    if shutil.which("udisksctl"):
+        res = run_command(["udisksctl", "mount", "-b", path, "--no-user-interaction"], 30)
+        if res and res.returncode == 0:
+            match = re.search(r" at (.+?)\.?\s*$", res.stdout.strip())
+            if match:
+                return match.group(1)
+
+    uid, gid = _owner_ids()
+    options = []
+    if fstype.lower() in ("exfat", "vfat", "fat", "ntfs", "ntfs3"):
+        options = ["-o", f"uid={uid},gid={gid},umask=0022"]
+
+    mk = _privileged(["mkdir", "-p", mountpoint])
+    if mk is None or mk.returncode != 0:
+        log("STORAGE", "    Cannot create the mount point (need root).")
+        log("STORAGE", "    Re-run with: sudo python3 xr18_diagnostics.py --mount")
+        return None
+
+    res = _privileged(["mount"] + options + [path, mountpoint])
+    if res is None or res.returncode != 0:
+        err = res.stderr.strip() if res else "mount command unavailable"
+        log("STORAGE", f"    Mount failed: {err}")
+        if fstype.lower() == "exfat" and "unknown filesystem" in err.lower():
+            log("STORAGE", "    exFAT driver missing: sudo apt install exfatprogs "
+                           "(or exfat-fuse)")
+        log("STORAGE", "    Re-run with: sudo python3 xr18_diagnostics.py --mount")
+        return None
+
+    return mountpoint
 
 
 def _can_write(mount):
@@ -386,7 +469,7 @@ def _can_write(mount):
         return False, str(exc)
 
 
-def check_storage(min_free_gb, write_test):
+def check_storage(min_free_gb, write_test, do_mount=False, mountpoint=DEFAULT_MOUNTPOINT):
     """Return (status, summary, info)."""
 
     if shutil.which("lsblk") is None:
@@ -432,14 +515,38 @@ def check_storage(min_free_gb, write_test):
                 status, summary = FAIL, f"{path} has no filesystem"
                 result = (status, summary, None)
 
+            else:
+                if not mounts and do_mount:
+                    log("STORAGE", f"    Mounting {path} at {mountpoint}...")
+                    new_mount = mount_volume(path, fstype, mountpoint)
+                    if new_mount:
+                        mounts = [new_mount]
+                        log("STORAGE", f"    Mounted at {new_mount}")
+
+            if not fstype:
+                pass  # result already set above
+
             elif not mounts:
-                log("STORAGE", "    Not mounted. Try: "
-                               f"sudo mkdir -p /mnt/recordings && sudo mount {path} /mnt/recordings")
+                log("STORAGE", "    Not mounted. Run with --mount to mount it "
+                               "(sudo python3 xr18_diagnostics.py --mount), or manually: "
+                               f"sudo mkdir -p {mountpoint} && sudo mount "
+                               f"-o uid=$(id -u),gid=$(id -g) {path} {mountpoint}")
                 status, summary = FAIL, f"{path} is not mounted"
                 result = (status, summary, None)
 
             else:
                 mount = mounts[0]
+
+                # Mounted by root without user ownership (typical for exFAT):
+                # remount with the right uid/gid.
+                if (do_mount and write_test and not _can_write(mount)[0]
+                        and fstype.lower() in ("exfat", "vfat", "fat", "ntfs", "ntfs3")):
+                    log("STORAGE", f"    {mount} is not writable by you; remounting "
+                                   "with your uid/gid...")
+                    new_mount = mount_volume(path, fstype, mountpoint, remount=True)
+                    if new_mount:
+                        mount = new_mount
+
                 usage = shutil.disk_usage(mount)
                 free_gb = usage.free / 1024 ** 3
                 log("STORAGE", f"    Mounted at {mount}: "
@@ -501,6 +608,11 @@ def main():
                         help="network discovery timeout in seconds (default 3)")
     parser.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB,
                         help=f"warn if the drive has less free space (default {DEFAULT_MIN_FREE_GB:g})")
+    parser.add_argument("--mount", action="store_true",
+                        help="mount the USB pen drive if it is not mounted "
+                             "(writable by your user; uses sudo if not root)")
+    parser.add_argument("--mountpoint", default=DEFAULT_MOUNTPOINT,
+                        help=f"where to mount the pen drive (default {DEFAULT_MOUNTPOINT})")
     parser.add_argument("--no-write-test", action="store_true",
                         help="skip creating a temp file on the pen drive")
     args = parser.parse_args()
@@ -528,7 +640,8 @@ def main():
     audio = check_audio()
 
     section("STORAGE: USB pen drive")
-    storage = check_storage(args.min_free_gb, not args.no_write_test)
+    storage = check_storage(args.min_free_gb, not args.no_write_test,
+                            args.mount, args.mountpoint)
 
     results = [("Mixer on network", net), ("Mixer USB audio", audio),
                ("Pen drive", storage)]
