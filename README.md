@@ -110,9 +110,10 @@ USB channels 17 and 18 are read from the Main L/R bus (the default USB routing).
 
 ## Start recording at boot (systemd)
 
-The `systemd/xr18-recorder.service` unit starts the recorder automatically when the Pi boots. From the repository folder on the Pi, install it with:
+The `systemd/xr18-recorder.service` unit starts the recorder automatically when the Pi boots. On the Pi (login user `orangepi`, repository cloned to `/home/orangepi/live-rec-pi`), install it with:
 
 ```bash
+cd /home/orangepi/live-rec-pi
 sed "s|@REPO_DIR@|$PWD|g" systemd/xr18-recorder.service | sudo tee /etc/systemd/system/xr18-recorder.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now xr18-recorder
@@ -122,7 +123,7 @@ The `sed` command fills in the path of the repository, so no manual editing is n
 
 How it behaves:
 
-- **Runs as root**, which the script needs to mount the pen drive.
+- **Runs as root**, not as `orangepi`, because the script needs root to mount the pen drive. The `orangepi` user is only used for the repository location.
 - **Waits for the mixer and the drive.** If the mixer's USB or the pen drive is not ready, the script exits with code 2 before writing anything, and systemd retries every 10 seconds. You can power on the mixer or plug in the drive after the Pi has booted.
 - **Network.** The service waits for the network to come up so the mixer's names and colours can be read. If the network is still not available, all channels are recorded with generic names.
 - **A new recording starts on every boot**, and also on every automatic retry after a failure, such as the audio capture dying mid-session. Each one gets its own folder.
